@@ -122,7 +122,7 @@ func (d *Downloader) downloadLatestRelease(owner, repo string) error {
 			continue
 		}
 
-		if err := d.downloadAsset(owner, repo, asset); err != nil {
+		if err := d.downloadAsset(asset); err != nil {
 			// Log and continue with other assets
 			fmt.Printf("Warning: failed to download asset '%s' from %s/%s: %v\n", asset.GetName(), owner, repo, err)
 		}
@@ -132,14 +132,14 @@ func (d *Downloader) downloadLatestRelease(owner, repo string) error {
 }
 
 // downloadAsset downloads a single asset and saves it to the destination directory.
-func (d *Downloader) downloadAsset(owner, repo string, asset *github.ReleaseAsset) error {
+func (d *Downloader) downloadAsset(asset *github.ReleaseAsset) error {
 	url := asset.GetBrowserDownloadURL()
 	if url == "" {
 		return fmt.Errorf("asset '%s' does not have a download URL", asset.GetName())
 	}
 
 	// Create a file path: destDir/owner_repo_assetName
-	fileName := fmt.Sprintf("%s_%s_%s", owner, repo, asset.GetName())
+	fileName := asset.GetName()
 	filePath := filepath.Join(d.destDir, fileName)
 
 	// Check if file already exists
