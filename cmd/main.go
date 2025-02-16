@@ -24,12 +24,11 @@ func main() {
 		*token = os.Getenv("GITHUB_TOKEN")
 	}
 
-	// Validate required flags
+	// (Optional) Warn the user if no token is provided, but do not exit.
 	if *token == "" {
-		fmt.Println("Error: GitHub Personal Access Token is required. Provide it via the -token flag or set the GITHUB_TOKEN environment variable.")
-		flag.Usage()
-		os.Exit(1)
+		fmt.Println("Warning: No GitHub token provided. Proceeding with unauthenticated requests (rate limits apply).")
 	}
+
 	if *repos == "" {
 		fmt.Println("Error: At least one repository is required.")
 		flag.Usage()

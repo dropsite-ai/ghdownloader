@@ -29,12 +29,17 @@ type Downloader struct {
 // New creates a new Downloader.
 // destDir is the directory where binaries will be saved.
 func New(token, destDir string) *Downloader {
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-	client := github.NewClient(tc)
+	var client *github.Client
+	if token == "" {
+		client = github.NewClient(nil)
+	} else {
+		ctx := context.Background()
+		ts := oauth2.StaticTokenSource(
+			&oauth2.Token{AccessToken: token},
+		)
+		tc := oauth2.NewClient(ctx, ts)
+		client = github.NewClient(tc)
+	}
 
 	return &Downloader{
 		client:    client,
@@ -164,7 +169,9 @@ func (d *Downloader) downloadAsset(asset *github.ReleaseAsset) error {
 		return fmt.Errorf("failed to create HTTP request: %v", err)
 	}
 	// Set authorization header
-	req.Header.Set("Authorization", "token "+d.token)
+	if d.token != "" {
+		req.Header.Set("Authorization", "token "+d.token)
+	}
 	req.Header.Set("Accept", "application/octet-stream")
 
 	resp, err := http.DefaultClient.Do(req)
