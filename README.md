@@ -2,35 +2,83 @@
 
 Download latest releases from a GitHub repository.
 
-## Install
+## Installation
 
-Download from [Releases](https://github.com/dropsite-ai/ghdownloader/releases):
+### Homebrew (macOS or Compatible)
 
+If you use Homebrew, install ghdownloader with:
 ```bash
-tar -xzf ghdownloader_Darwin_arm64.tar.gz
-chmod +x ghdownloader
-sudo mv ghdownloader /usr/local/bin/
+brew tap dropsite-ai/homebrew-tap
+brew install ghdownloader
 ```
 
-Or manually build and install:
+### Download Binaries
 
-```bash
-git clone git@github.com:dropsite-ai/ghdownloader.git
-cd ghdownloader
-make install
-```
+Grab the latest pre-built binaries from the [GitHub Releases](https://github.com/dropsite-ai/ghdownloader/releases). Extract them, then run the `ghdownloader` executable directly.
+
+### Build from Source
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/dropsite-ai/ghdownloader.git
+   cd ghdownloader
+   ```
+2. **Build using Go**:
+   ```bash
+   go build -o ghdownloader cmd/main.go
+   ```
 
 ## Usage
 
+### Command-Line
+
+Download the latest releases from one or more GitHub repositories using:
+
 ```bash
-  -dest string
-    	Destination directory for downloaded binaries (default "./downloads")
-  -match string
-    	Substring to filter assets by name (optional)
-  -repos string
-    	Comma-separated list of GitHub repositories in 'owner/repo' format (required)
-  -token string
-    	GitHub Personal Access Token. Defaults to GITHUB_TOKEN environment variable if not provided.
+ghdownloader -repo owner/repo -repo anotherOwner/anotherRepo \
+  -dest "./downloads" -token YOUR_GITHUB_TOKEN -match "linux"
+```
+
+- **-repo**: Specify one repository per flag in the format `owner/repo`. This flag can be repeated for multiple repositories.
+- **-dest**: Destination directory for downloaded binaries (default: `./downloads`).
+- **-token**: Your GitHub Personal Access Token (if omitted, the program uses the `GITHUB_TOKEN` environment variable).
+- **-match**: (Optional) A substring filter to only download assets whose names match this filter.
+
+### Programmatic Usage
+
+You can also integrate the downloader into your Go applications:
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+
+    "github.com/dropsite-ai/ghdownloader"
+)
+
+func main() {
+    token := "YOUR_GITHUB_TOKEN"   // Leave empty for unauthenticated requests.
+    destDir := "./downloads"
+    repos := []string{"owner/repo", "anotherOwner/anotherRepo"}
+    match := "linux"
+
+    // Create a new downloader and set an optional filter.
+    downloader := ghdownloader.New(token, destDir)
+    downloader.SetMatchFilter(match)
+    
+    // Download the latest releases.
+    binPaths, err := downloader.DownloadLatestReleases(repos)
+    if err != nil {
+        log.Fatalf("Download error: %v", err)
+    }
+    
+    fmt.Println("Downloaded binaries:")
+    for _, path := range binPaths {
+        fmt.Println(path)
+    }
+}
 ```
 
 ## Test
