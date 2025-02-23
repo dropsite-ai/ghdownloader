@@ -4,6 +4,12 @@ Download latest releases from a GitHub repository.
 
 ## Installation
 
+### Go Package
+
+```bash
+go get github.com/dropsite-ai/ghdownloader
+```
+
 ### Homebrew (macOS or Compatible)
 
 If you use Homebrew, install ghdownloader with:
