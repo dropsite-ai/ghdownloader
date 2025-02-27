@@ -137,17 +137,19 @@ func (d *Downloader) downloadLatestRelease(owner, repo string) error {
 }
 
 // downloadAsset downloads a single asset and saves it to the destination directory.
+// It uses the asset’s API URL to get a redirect URL and then downloads the asset from that URL.
 func (d *Downloader) downloadAsset(asset *github.ReleaseAsset) error {
-	url := asset.GetBrowserDownloadURL()
-	if url == "" {
-		return fmt.Errorf("asset '%s' does not have a download URL", asset.GetName())
+	// Use the API URL for authenticated download
+	apiURL := asset.GetURL()
+	if apiURL == "" {
+		return fmt.Errorf("asset '%s' does not have an API URL", asset.GetName())
 	}
 
-	// Create a file path: destDir/owner_repo_assetName
+	// Create file path for saving the asset
 	fileName := asset.GetName()
 	filePath := filepath.Join(d.destDir, fileName)
 
-	// Check if file already exists
+	// Skip download if file already exists
 	if _, err := os.Stat(filePath); err == nil {
 		fmt.Printf("File '%s' already exists. Skipping download.\n", filePath)
 		d.mu.Lock()
@@ -163,35 +165,62 @@ func (d *Downloader) downloadAsset(asset *github.ReleaseAsset) error {
 	}
 	defer file.Close()
 
-	// Get the asset
-	req, err := http.NewRequest("GET", url, nil)
+	// First request: get the redirect URL from the asset API endpoint
+	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request: %v", err)
 	}
-	// Set authorization header
 	if d.token != "" {
 		req.Header.Set("Authorization", "token "+d.token)
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 
-	resp, err := http.DefaultClient.Do(req)
+	// Use a custom HTTP client to prevent automatic redirects
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Stop following redirects so we can capture the 302 response
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to download asset: %v", err)
+		return fmt.Errorf("failed to get asset redirect URL: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status downloading asset: %s", resp.Status)
+	// Expect a 302 Found response containing the redirect URL
+	if resp.StatusCode != http.StatusFound {
+		return fmt.Errorf("unexpected status code (expected 302 Found): got %s", resp.Status)
+	}
+	redirectURL := resp.Header.Get("Location")
+	if redirectURL == "" {
+		return fmt.Errorf("no redirect location found for asset '%s'", asset.GetName())
 	}
 
-	// Write the body to file
-	_, err = io.Copy(file, resp.Body)
+	// Second request: download the asset using the redirect URL
+	secondReq, err := http.NewRequest("GET", redirectURL, nil)
 	if err != nil {
+		return fmt.Errorf("failed to create HTTP request for redirected URL: %v", err)
+	}
+	// The redirect URL is typically pre-signed; setting Accept is sufficient.
+	secondReq.Header.Set("Accept", "application/octet-stream")
+
+	secondResp, err := http.DefaultClient.Do(secondReq)
+	if err != nil {
+		return fmt.Errorf("failed to download asset from redirect URL: %v", err)
+	}
+	defer secondResp.Body.Close()
+
+	if secondResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status downloading asset from redirect URL: %s", secondResp.Status)
+	}
+
+	// Write the downloaded content to file
+	if _, err = io.Copy(file, secondResp.Body); err != nil {
 		return fmt.Errorf("failed to write to file '%s': %v", filePath, err)
 	}
 
 	fmt.Printf("Downloaded '%s' to '%s'\n", asset.GetName(), filePath)
-
 	d.mu.Lock()
 	d.binPaths = append(d.binPaths, filePath)
 	d.mu.Unlock()
