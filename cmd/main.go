@@ -31,16 +31,6 @@ func main() {
 
 	flag.Parse()
 
-	// Use GITHUB_TOKEN environment variable if token flag is empty.
-	if *token == "" {
-		*token = os.Getenv("GITHUB_TOKEN")
-	}
-
-	// Warn if no token is provided.
-	if *token == "" {
-		fmt.Println("Warning: No GitHub token provided. Proceeding with unauthenticated requests (rate limits apply).")
-	}
-
 	// Validate that at least one repository is provided.
 	if len(repos) == 0 {
 		fmt.Println("Error: At least one repository is required.")

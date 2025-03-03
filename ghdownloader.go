@@ -31,6 +31,9 @@ type Downloader struct {
 func New(token, destDir string) *Downloader {
 	var client *github.Client
 	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
+	}
+	if token == "" {
 		client = github.NewClient(nil)
 	} else {
 		ctx := context.Background()
