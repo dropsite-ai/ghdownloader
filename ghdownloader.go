@@ -128,8 +128,10 @@ func (d *Downloader) downloadLatestRelease(owner, repo string) error {
 		tag = "latest"
 		forceDownload = true
 	}
-	versionDir := filepath.Join(d.destDir, tag)
 
+	// Build directory name as "<repoName>-<tag>"
+	dirName := fmt.Sprintf("%s-%s", repo, tag)
+	versionDir := filepath.Join(d.destDir, dirName)
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
 		return fmt.Errorf("failed to create version directory '%s': %v", versionDir, err)
 	}
@@ -203,6 +205,7 @@ func (d *Downloader) downloadAsset(asset *github.ReleaseAsset, versionDir string
 	if resp.StatusCode != http.StatusFound {
 		return fmt.Errorf("unexpected status code (expected 302 Found): got %s", resp.Status)
 	}
+
 	redirectURL := resp.Header.Get("Location")
 	if redirectURL == "" {
 		return fmt.Errorf("no redirect location found for asset '%s'", asset.GetName())
