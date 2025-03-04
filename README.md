@@ -50,6 +50,11 @@ ghdownloader -repo owner/repo -repo anotherOwner/anotherRepo \
 - **-token**: Your GitHub Personal Access Token (if omitted, the program uses the `GITHUB_TOKEN` environment variable).
 - **-match**: (Optional) A substring filter to only download assets whose names match this filter.
 
+#### How Releases Are Organized
+
+- **Tagged Releases**: For each release with a valid tag (e.g., `v1.2.3`), ghdownloader creates a subdirectory named after that tag under your specified `-dest`. If the file already exists in that subdirectory, it won't be re-downloaded.  
+- **Latest (No Tag)**: If the release has no tag, ghdownloader names the subdirectory `latest`. In this scenario, existing files are **always overwritten**—ghdownloader re-downloads them every run.
+
 ### Programmatic Usage
 
 You can also integrate the downloader into your Go applications:

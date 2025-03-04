@@ -58,8 +58,8 @@ func (d *Downloader) SetMatchFilter(match string) {
 }
 
 // DownloadLatestReleases downloads the latest release binaries for the given user/repos.
-// userRepos should be in the format "owner/repo".
 func (d *Downloader) DownloadLatestReleases(userRepos []string) ([]string, error) {
+	// Make sure the top-level destination directory exists.
 	if err := os.MkdirAll(d.destDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create destination directory: %v", err)
 	}
@@ -93,7 +93,6 @@ func (d *Downloader) DownloadLatestReleases(userRepos []string) ([]string, error
 	if len(errs) > 0 {
 		return d.binPaths, fmt.Errorf("errors occurred:\n%s", strings.Join(errs, "\n"))
 	}
-
 	return d.binPaths, nil
 }
 
@@ -113,55 +112,65 @@ func (d *Downloader) downloadLatestRelease(owner, repo string) error {
 		return fmt.Errorf("error fetching latest release: %v", err)
 	}
 
+	// Optionally skip if the latest release is a draft or pre-release:
 	if release.GetDraft() || release.GetPrerelease() {
-		// Optionally skip drafts and pre-releases
 		return fmt.Errorf("latest release is draft or pre-release")
 	}
 
-	assets := release.Assets
-	if len(assets) == 0 {
+	if len(release.Assets) == 0 {
 		return fmt.Errorf("no assets found in the latest release")
 	}
 
-	// Download assets matching the filter
-	for _, asset := range assets {
+	// If tag is empty, we'll call it "latest" and force re-download
+	tag := release.GetTagName()
+	forceDownload := false
+	if tag == "" {
+		tag = "latest"
+		forceDownload = true
+	}
+	versionDir := filepath.Join(d.destDir, tag)
+
+	if err := os.MkdirAll(versionDir, 0755); err != nil {
+		return fmt.Errorf("failed to create version directory '%s': %v", versionDir, err)
+	}
+
+	// Download each asset that matches our (optional) filter
+	for _, asset := range release.Assets {
 		if d.matchFilter != "" && !strings.Contains(asset.GetName(), d.matchFilter) {
 			fmt.Printf("Skipping asset '%s' (does not match filter '%s')\n", asset.GetName(), d.matchFilter)
 			continue
 		}
-
-		if err := d.downloadAsset(asset); err != nil {
-			// Log and continue with other assets
-			fmt.Printf("Warning: failed to download asset '%s' from %s/%s: %v\n", asset.GetName(), owner, repo, err)
+		if err := d.downloadAsset(asset, versionDir, forceDownload); err != nil {
+			fmt.Printf("Warning: failed to download asset '%s' from %s/%s: %v\n",
+				asset.GetName(), owner, repo, err)
 		}
 	}
-
 	return nil
 }
 
-// downloadAsset downloads a single asset and saves it to the destination directory.
-// It uses the asset’s API URL to get a redirect URL and then downloads the asset from that URL.
-func (d *Downloader) downloadAsset(asset *github.ReleaseAsset) error {
+// downloadAsset downloads a single asset and saves it to the provided directory.
+func (d *Downloader) downloadAsset(asset *github.ReleaseAsset, versionDir string, forceDownload bool) error {
 	// Use the API URL for authenticated download
 	apiURL := asset.GetURL()
 	if apiURL == "" {
 		return fmt.Errorf("asset '%s' does not have an API URL", asset.GetName())
 	}
 
-	// Create file path for saving the asset
 	fileName := asset.GetName()
-	filePath := filepath.Join(d.destDir, fileName)
+	filePath := filepath.Join(versionDir, fileName)
 
-	// Skip download if file already exists
-	if _, err := os.Stat(filePath); err == nil {
-		fmt.Printf("File '%s' already exists. Skipping download.\n", filePath)
-		d.mu.Lock()
-		d.binPaths = append(d.binPaths, filePath)
-		d.mu.Unlock()
-		return nil
+	// If NOT forced (i.e., not "latest"), skip download if file exists
+	if !forceDownload {
+		if _, err := os.Stat(filePath); err == nil {
+			fmt.Printf("File '%s' already exists. Skipping download.\n", filePath)
+			d.mu.Lock()
+			d.binPaths = append(d.binPaths, filePath)
+			d.mu.Unlock()
+			return nil
+		}
 	}
 
-	// Create the file
+	// Create file
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create file '%s': %v", filePath, err)
@@ -178,20 +187,19 @@ func (d *Downloader) downloadAsset(asset *github.ReleaseAsset) error {
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 
-	// Use a custom HTTP client to prevent automatic redirects
+	// Use a custom client to capture 302 redirect
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Stop following redirects so we can capture the 302 response
 			return http.ErrUseLastResponse
 		},
 	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to get asset redirect URL: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// Expect a 302 Found response containing the redirect URL
 	if resp.StatusCode != http.StatusFound {
 		return fmt.Errorf("unexpected status code (expected 302 Found): got %s", resp.Status)
 	}
@@ -205,7 +213,6 @@ func (d *Downloader) downloadAsset(asset *github.ReleaseAsset) error {
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request for redirected URL: %v", err)
 	}
-	// The redirect URL is typically pre-signed; setting Accept is sufficient.
 	secondReq.Header.Set("Accept", "application/octet-stream")
 
 	secondResp, err := http.DefaultClient.Do(secondReq)
@@ -218,7 +225,7 @@ func (d *Downloader) downloadAsset(asset *github.ReleaseAsset) error {
 		return fmt.Errorf("bad status downloading asset from redirect URL: %s", secondResp.Status)
 	}
 
-	// Write the downloaded content to file
+	// Write the downloaded content
 	if _, err = io.Copy(file, secondResp.Body); err != nil {
 		return fmt.Errorf("failed to write to file '%s': %v", filePath, err)
 	}
